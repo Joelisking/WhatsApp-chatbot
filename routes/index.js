@@ -15,8 +15,6 @@ const CustomerSession = new Map();
 
 router.get('/meta_wa_callbackurl', (req, res) => {
   try {
-    console.log('GET: Someone is pinging me!');
-
     let mode = req.query['hub.mode'];
     let token = req.query['hub.verify_token'];
     let challenge = req.query['hub.challenge'];
@@ -33,16 +31,15 @@ router.get('/meta_wa_callbackurl', (req, res) => {
 });
 
 router.post('/meta_wa_callbackurl', async (req, res) => {
-  console.log('POST: Someone is pinging me!');
   try {
     let data = Whatsapp.parseMessage(req.body);
 
     if (data?.isMessage) {
       let incomingMessage = data.message;
-      let recipientPhone = incomingMessage.from.phone; // extract the phone number of sender
+      let recipientPhone = incomingMessage.from.phone;
       let recipientName = incomingMessage.from.name;
-      let typeOfMsg = incomingMessage.type; // extract the type of message (some are text, others are images, others are responses to buttons etc...)
-      let message_id = incomingMessage.message_id; // extract the message id
+      let typeOfMsg = incomingMessage.type;
+      let message_id = incomingMessage.message_id;
 
       // Start of cart logic
       if (!CustomerSession.get(recipientPhone)) {
@@ -52,9 +49,9 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
       }
 
       let addToCart = async ({ product_id, recipientPhone }) => {
-        let product = await Store.getProductById(product_id);
-        if (product.status === 'success') {
-          CustomerSession.get(recipientPhone).cart.push(product.data);
+        let product = Store.products.find((p) => p.id === product_id);
+        if (product) {
+          CustomerSession.get(recipientPhone).cart.push(product);
         }
       };
 
@@ -78,7 +75,7 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
           listOfButtons: [
             {
               title: 'View some products',
-              id: 'see_categories',
+              id: 'see_products',
             },
             {
               title: 'Speak to a human',
@@ -93,11 +90,11 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
 
         if (selectionId.startsWith('product_')) {
           let product_id = selectionId.split('_')[1];
-          let product = await Store.getProductById(product_id);
-          const { price, title, description, category, image: imageUrl, rating } = product.data;
+          let product = Store.products.find((p) => p.id === parseInt(product_id));
+          const { price, title, description, image: imageUrl, rating } = product;
 
           let emojiRating = (rvalue) => {
-            rvalue = Math.floor(rvalue || 0); // generate as many star emojis as whole ratings
+            rvalue = Math.floor(rvalue || 0);
             let output = [];
             for (var i = 0; i < rvalue; i++) output.push('⭐');
             return output.length ? output.join('') : 'N/A';
@@ -106,7 +103,6 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
           let text = `_Title_: *${title.trim()}*\n\n\n`;
           text += `_Description_: ${description.trim()}\n\n\n`;
           text += `_Price_: $${price}\n`;
-          text += `_Category_: ${category}\n`;
           text += `${rating?.count || 0} shoppers liked this product.\n`;
           text += `_Rated_: ${emojiRating(rating?.rate)}\n`;
 
@@ -131,7 +127,7 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
               },
               {
                 title: 'See more products',
-                id: 'see_categories',
+                id: 'see_products',
               },
             ],
           });
@@ -175,28 +171,12 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
             },
           });
         }
-        if (button_id === 'see_categories') {
-          let categories = await Store.getAllCategories();
 
-          await Whatsapp.sendSimpleButtons({
-            message: `We have several categories.\nChoose one of them.`,
-            recipientPhone: recipientPhone,
-            message_id,
-            listOfButtons: categories.data.slice(0, 3).map((category) => ({
-              title: category,
-              id: `category_${category}`,
-            })),
-          });
-        }
-
-        if (button_id.startsWith('category_')) {
-          let selectedCategory = button_id.split('category_')[1];
-          let listOfProducts = await Store.getProductsInCategory(selectedCategory);
-
+        if (button_id === 'see_products') {
           let listOfSections = [
             {
-              title: `🏆 Top 3: ${selectedCategory}`.substring(0, 24),
-              rows: listOfProducts.data
+              title: 'Top Products',
+              rows: Store.getAllProducts()
                 .map((product) => {
                   let id = `product_${product.id}`.substring(0, 256);
                   let title = product.title.substring(0, 21);
@@ -214,8 +194,8 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
 
           await Whatsapp.sendRadioButtons({
             recipientPhone: recipientPhone,
-            headerText: `#BlackFriday Offers: ${selectedCategory}`,
-            bodyText: `Our Santa 🎅🏿 has lined up some great products for you based on your previous shopping history.\n\nPlease select one of the products below:`,
+            headerText: 'Our Products',
+            bodyText: 'Please select one of the products below:',
             footerText: 'Powered by: BMI LLC',
             listOfSections,
           });
@@ -239,7 +219,7 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
               },
               {
                 title: 'See more products',
-                id: 'see_categories',
+                id: 'see_products',
               },
             ],
           });
@@ -273,7 +253,7 @@ router.post('/meta_wa_callbackurl', async (req, res) => {
             listOfButtons: [
               {
                 title: 'See more products',
-                id: 'see_categories',
+                id: 'see_products',
               },
               {
                 title: 'Print my invoice',
